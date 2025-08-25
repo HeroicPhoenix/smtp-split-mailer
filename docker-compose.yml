@@ -1,0 +1,32 @@
+version: "3.9"
+services:
+  folder-mailer:
+    container_name: smtp-split-mailer
+    ports:
+      - "12082:12082"
+    volumes:
+      # 群晖本地统一映射到容器 /data，里面会包含 uploads/outputs/logs/bin/7z
+      - /volume1/docker/smtp-split-mailer/data:/data
+    environment:
+      # --- SMTP 配置 ---
+      SMTP_HOST: "xxx.xxx.com"
+      SMTP_PORT: 465
+      SMTP_USERNAME: "yourname@xxx.com"
+      SMTP_PASSWORD: "授权码或密码"
+      SMTP_USE_SSL: "true"
+      SMTP_USE_TLS: "false"
+
+      # --- 默认值配置 ---
+      DEFAULT_SENDER: "yourname@xxx.com"
+      DEFAULT_RECIPIENTS: "a@xxx.com,b@xxx.com"
+      DEFAULT_CC: "boss@xxx.com"
+      DEFAULT_SUBJECT_PREFIX: "项目资料-分卷传输"
+      DEFAULT_OUTPUT_BASENAME: "mydata"
+      DEFAULT_VOLUME_SIZE_MB: 20
+      DEFAULT_SEND_INTERVAL_SEC: 5
+
+      # --- 可选：强制指定 7z 包（放到 /app/bin/） ---
+      # SEVENZ_TARBALL: "7z2501-linux-x64.tar.xz"
+
+      # --- 可选：控制台日志级别 ---
+      # LOG_CONSOLE_LEVEL: "WARNING"

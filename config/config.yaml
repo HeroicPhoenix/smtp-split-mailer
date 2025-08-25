@@ -1,0 +1,17 @@
+# 默认配置（会被同名环境变量覆盖）
+default_output_basename: "mydata"
+default_subject_prefix: "项目资料-分卷传输"
+default_volume_size_mb: 20
+default_send_interval_sec: 5
+
+default_sender: "machenkai@sgepri.sgcc.com.cn"
+default_recipients: "1103931738@qq.com"
+default_cc: ""
+
+# SMTP
+smtp_host: "newsmtp.sgcc.com.cn"
+smtp_port: 465
+smtp_username: "machenkai@sgepri.sgcc.com.cn"
+smtp_password: "machenkai991102!"
+smtp_use_ssl: true
+smtp_use_tls: false
