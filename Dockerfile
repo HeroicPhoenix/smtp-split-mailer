@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive
 
 # 安装 7z 解包工具（tar + xz-utils）和证书
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get install -y --no-install-recommends \
     xz-utils tar ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
