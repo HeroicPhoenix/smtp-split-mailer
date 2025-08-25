@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SMTP 分卷发送器</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --pri: #3b82f6;
+      --pri-600: #2563eb;
+      --good:#10b981;
+      --bad:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body { margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC","Noto Sans CJK SC","Microsoft Yahei",sans-serif; }
+    .wrap { max-width:1180px; margin:20px auto; padding:0 12px; }
+    .title { font-size:22px; font-weight:700; margin:12px 0 18px; display:flex; align-items:center; gap:10px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .section-title{font-size:16px;font-weight:700;margin:8px 0 10px}
+    .row{display:grid; grid-template-columns: 160px 1fr; align-items:center; gap:10px; margin:10px 0;}
+    .row input[type="text"], .row input[type="number"], .row input[type="email"], .row input[type="password"]{
+      width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; outline:none; background:#fff;
+    }
+    .row input:focus{ border-color: var(--pri); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+    .muted{color:var(--muted); font-size:12px}
+    .btn{ padding:10px 14px; border-radius:12px; border:1px solid var(--pri); background:var(--pri); color:#fff; cursor:pointer; font-weight:600; }
+    .btn:hover{ background:var(--pri-600); border-color:var(--pri-600); }
+    .btn.secondary{ background:#fff; color:var(--pri); }
+    .btn.ghost{ background:#fff; color:var(--text); border-color:var(--border); }
+    .stack{display:flex; gap:8px; flex-wrap:wrap;}
+    .log{ height:460px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New",monospace; background:#fbfcfe;border:1px solid var(--border); border-radius:12px; padding:10px;}
+    .keyval{font-size:12px; color:var(--muted); margin:8px 0 0;}
+    .pill{display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background:#fff;}
+    .ok{color:var(--good)} .bad{color:var(--bad)}
+    .hr{height:1px;background:var(--border);margin:12px 0}
+    @media (max-width: 920px){
+      .grid{grid-template-columns:1fr}
+      .row{grid-template-columns:1fr}
+    }
+    .note{font-size:12px;color:var(--muted);margin-top:-6px}
+    /* 隐藏真实的文件夹选择框 */
+    #dirPicker{ position:absolute; left:-9999px; width:0; height:0; opacity:0; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 7l9 6 9-6" stroke="currentColor" stroke-width="1.6"/><path d="M3 7h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" stroke="currentColor" stroke-width="1.6"/></svg>
+    SMTP 分卷发送器
+    <span class="pill" id="arch"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="section-title">上传与参数</div>
+
+      <!-- 单按钮：点击后唤起文件夹选择，并自动上传 -->
+      <div class="row">
+        <div>上传源文件夹</div>
+        <div class="stack">
+          <button class="btn secondary" id="btnPickAndUpload">选择并上传文件夹</button>
+          <input id="dirPicker" type="file" webkitdirectory directory multiple />
+        </div>
+      </div>
+      <div class="note">选择后会立即上传到服务器（uploads/session_xxx/）。</div>
+
+      <div class="hr"></div>
+      <div class="section-title">输出与邮件字段</div>
+      <div class="row">
+        <div>输出文件基名</div><input id="output_basename" type="text" placeholder="mydata" />
+      </div>
+      <div class="row">
+        <div>邮件主题前缀</div><input id="subject_prefix" type="text" placeholder="项目资料-分卷传输" />
+      </div>
+      <div class="row">
+        <div>分卷大小（MB）</div><input id="volume_size_mb" type="number" min="1" step="1" placeholder="20" />
+      </div>
+      <div class="row">
+        <div>发送间隔（秒）</div><input id="send_interval_sec" type="number" min="0" step="1" placeholder="2" />
+      </div>
+      <div class="row"><div>发件人地址</div><input id="sender" type="email" placeholder="" /></div>
+      <div class="row"><div>收件人（逗号分隔）</div><input id="recipients" type="text" placeholder="" /></div>
+      <div class="row"><div>抄送（逗号分隔）</div><input id="cc" type="text" placeholder="" /></div>
+
+      <div class="hr"></div>
+      <div class="section-title">SMTP 登录信息</div>
+      <div class="row"><div>服务器地址</div><input id="smtp_host" type="text" /></div>
+      <div class="row"><div>端口</div><input id="smtp_port" type="number" /></div>
+      <div class="row"><div>账号</div><input id="smtp_username" type="text" /></div>
+      <div class="row"><div>密码/授权码</div><input id="smtp_password" type="password" /></div>
+      <div class="row">
+        <div>安全</div>
+        <div class="stack">
+          <label><input type="checkbox" id="smtp_use_ssl"> SSL</label>
+          <label><input type="checkbox" id="smtp_use_tls"> TLS</label>
+          <button class="btn ghost" id="btnReadDefaults">读取默认配置</button>
+          <button class="btn ghost" id="btnTestSMTP">测试 SMTP</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <div class="stack">
+        <button class="btn" id="btnStart">开始分卷并发送</button>
+        <button class="btn ghost" id="btnList">列出分卷</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">执行与日志</div>
+      <div class="keyval">
+        任务状态：<span class="pill" id="status">-</span>
+        任务ID：<span class="pill" id="jobId">-</span>
+        会话ID：<span class="pill" id="sessionId">-</span>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const el = id => document.getElementById(id);
+  const logBox = el('log');
+  const sessionId = 'session_' + Date.now();
+  el('sessionId').innerText = sessionId;
+
+  function addLog(line){
+    const atBottom = Math.abs(logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight) < 5;
+    const div = document.createElement('div');
+    div.textContent = line;
+    logBox.appendChild(div);
+    if(atBottom) logBox.scrollTop = logBox.scrollHeight;
+  }
+  function setStatus(s){ el('status').innerText = s; }
+  function setJobId(s){ el('jobId').innerText = s; }
+
+  async function loadDefaults(){
+    const res = await fetch('/api/defaults');
+    const d = await res.json();
+    el('output_basename').value = d.output_basename || 'mydata';
+    el('subject_prefix').value = d.subject_prefix || '项目资料-分卷传输';
+    el('volume_size_mb').value = d.volume_size_mb ?? 20;
+    el('send_interval_sec').value = d.send_interval_sec ?? 2;
+    el('sender').value = d.sender || '';
+    el('recipients').value = d.recipients || '';
+    el('cc').value = d.cc || '';
+    el('smtp_host').value = d.smtp_host || '';
+    el('smtp_port').value = d.smtp_port ?? 465;
+    el('smtp_username').value = d.smtp_username || '';
+    el('smtp_password').value = d.smtp_password || '';
+    el('smtp_use_ssl').checked = !!d.smtp_use_ssl;
+    el('smtp_use_tls').checked = !!d.smtp_use_tls;
+
+    const isArm = /arm|aarch64|apple silicon|m1|m2/i.test(navigator.userAgent);
+    el('arch').innerText = '客户端: ' + (isArm ? 'ARM/Apple' : 'x64/其他');
+  }
+
+  el('btnReadDefaults').onclick = loadDefaults;
+  window.addEventListener('load', loadDefaults);
+
+  function normalizeEmails(s){
+    if(!s) return "";
+    return s
+      .replace(/[\u3000]/g, " ")
+      .replace(/[，、；；]/g, ",")
+      .replace(/\s*([@.])\s*/g, "$1")
+      .replace(/[\s;]+/g, ",")
+      .replace(/^[,]+|[,]+$/g, "");
+  }
+
+  // 单按钮：点击 -> 唤起文件夹选择；选择完成 -> 自动上传
+  const picker = el('dirPicker');
+  el('btnPickAndUpload').onclick = () => picker.click();
+
+  picker.addEventListener('change', async () => {
+    if(!picker.files || !picker.files.length){
+      return;
+    }
+    addLog('开始上传...');
+    const fd = new FormData();
+    fd.append('session_id', sessionId);
+    Array.from(picker.files).forEach(f => {
+      fd.append('files', f);
+      fd.append('paths', f.webkitRelativePath || f.name);
+    });
+    try{
+      const res = await fetch('/api/upload', {method:'POST', body:fd});
+      if(!res.ok){
+        addLog('上传失败');
+        return;
+      }
+      await res.json();
+      addLog('上传完成');
+    }catch(e){
+      addLog('上传异常：' + e);
+    }finally{
+      // 清空选择，便于再次选择同一文件夹时还能触发 change
+      picker.value = '';
+    }
+  });
+
+  // 测试 SMTP
+  el('btnTestSMTP').onclick = async () => {
+    const body = {
+      host: el('smtp_host').value.trim(),
+      port: parseInt(el('smtp_port').value || '0', 10),
+      username: el('smtp_username').value.trim(),
+      password: el('smtp_password').value,
+      use_ssl: el('smtp_use_ssl').checked,
+      use_tls: el('smtp_use_tls').checked,
+    };
+    const res = await fetch('/api/test-smtp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const j = await res.json();
+    addLog(j.ok ? 'SMTP 正常' : 'SMTP 失败：' + j.message);
+  };
+
+  // 启动任务
+  let pollTimer = null;
+  el('btnStart').onclick = async () => {
+    const payload = {
+      session_id: sessionId,
+      output_basename: el('output_basename').value.trim(),
+      subject_prefix: el('subject_prefix').value.trim(),
+      volume_size_mb: parseInt(el('volume_size_mb').value || '20', 10),
+      send_interval_sec: parseInt(el('send_interval_sec').value || '2', 10),
+      sender: el('sender').value.trim(),
+      recipients: normalizeEmails(el('recipients').value),
+      cc: normalizeEmails(el('cc').value),
+    };
+    const res = await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    if(!res.ok){
+      addLog('启动失败');
+      return;
+    }
+    const j = await res.json();
+    setJobId(j.job_id);
+    setStatus(j.status);
+    addLog('任务已启动');
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      const r = await fetch('/api/logs?job_id=' + encodeURIComponent(j.job_id));
+      if(!r.ok){ return; }
+      const d = await r.json();
+      setStatus(d.status);
+      logBox.innerHTML = '';
+      d.logs.forEach(addLog);
+      if(d.status === 'DONE' || d.status === 'ERROR'){
+        clearInterval(pollTimer);
+      }
+    }, 1000);
+  };
+
+  // 列出分卷
+  el('btnList').onclick = async () => {
+    const res = await fetch('/api/list?session_id=' + encodeURIComponent(sessionId));
+    const j = await res.json();
+    if(!j.parts.length){
+      addLog('没有分卷');
+    }else{
+      addLog('分卷列表：');
+      j.parts.forEach(p => addLog(' - ' + p.name + ' (' + (Math.round(p.size/1024/1024*100)/100) + ' MB)'));
+    }
+  };
+</script>
+</body>
+</html>
