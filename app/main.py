@@ -12,7 +12,7 @@ from typing import List, Optional, Dict
 
 import yaml
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -23,6 +23,9 @@ import smtplib
 
 # ---------------- Paths ----------------
 APP_DIR = Path(__file__).resolve().parent.parent  # 项目根
+APP_DIR_SELF = Path(__file__).resolve().parent    # app/ 目录
+STATIC_DIR = APP_DIR_SELF / "static"              # 前端目录 app/static
+
 # 支持用环境变量覆盖数据根目录；默认使用 /data（容器内）或 <项目根>/data（本地跑）
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data" if Path("/data").exists() else APP_DIR / "data"))
 
@@ -285,11 +288,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
+# --- 静态资源挂载（app/static） ---
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-@app.get("/")
-def root():
-    return FileResponse(APP_DIR / "static" / "index.html")
+    @app.get("/")
+    def root():
+        return FileResponse(STATIC_DIR / "index.html")
+else:
+    @app.get("/", response_class=HTMLResponse)
+    def root():
+        return HTMLResponse(
+            "<h3>前端目录未找到</h3>"
+            f"<p>期望路径：{STATIC_DIR}</p>"
+            "<p>请确认 app/static/index.html 是否存在。</p>"
+        )
 
 @app.get("/api/defaults")
 def api_defaults():

@@ -17,7 +17,6 @@ services:
       SMTP_USE_TLS: "false"
 
       # --- 默认值配置 ---
-      DEFAULT_SENDER: "yourname@xxx.com"
       DEFAULT_RECIPIENTS: "a@xxx.com,b@xxx.com"
       DEFAULT_CC: "boss@xxx.com"
       DEFAULT_SUBJECT_PREFIX: "项目资料-分卷传输"

@@ -4,14 +4,13 @@ default_subject_prefix: "项目资料-分卷传输"
 default_volume_size_mb: 20
 default_send_interval_sec: 5
 
-default_sender: "machenkai@sgepri.sgcc.com.cn"
-default_recipients: "1103931738@qq.com"
+default_recipients: "a@xxx.com,b@xxx.com"
 default_cc: ""
 
 # SMTP
-smtp_host: "newsmtp.sgcc.com.cn"
+smtp_host: "xxx.xxx.com"
 smtp_port: 465
-smtp_username: "machenkai@sgepri.sgcc.com.cn"
-smtp_password: "machenkai991102!"
+smtp_username: "yourname@xxx.com"
+smtp_password: "授权码或密码"
 smtp_use_ssl: true
 smtp_use_tls: false
