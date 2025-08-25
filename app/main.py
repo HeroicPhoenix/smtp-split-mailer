@@ -26,14 +26,13 @@ APP_DIR = Path(__file__).resolve().parent.parent  # 项目根
 APP_DIR_SELF = Path(__file__).resolve().parent    # app/ 目录
 STATIC_DIR = APP_DIR_SELF / "static"              # 前端目录 app/static
 
-# 支持用环境变量覆盖数据根目录；默认使用 /data（容器内）或 <项目根>/data（本地跑）
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data" if Path("/data").exists() else APP_DIR / "data"))
 
-UPLOADS_DIR = DATA_DIR / "uploads"   # 原始上传
-OUTPUTS_DIR = DATA_DIR / "outputs"   # 分卷输出
-SEVENZ_DIR  = DATA_DIR / "7z"        # 解压后的 7zz
-BIN_DIR     = DATA_DIR / "bin"       # 7z 安装包 tar.xz 的存放位置
-CONFIG_FILE = APP_DIR / "config" / "config.yaml"  # 配置文件仍放代码仓（可按需挪到 DATA_DIR）
+UPLOADS_DIR = DATA_DIR / "uploads"
+OUTPUTS_DIR = DATA_DIR / "outputs"
+SEVENZ_DIR  = DATA_DIR / "7z"
+BIN_DIR     = DATA_DIR / "bin"
+CONFIG_FILE = APP_DIR / "config" / "config.yaml"
 LOG_FILE    = DATA_DIR / "logs" / "app.log"
 
 for p in [UPLOADS_DIR, OUTPUTS_DIR, SEVENZ_DIR, BIN_DIR, LOG_FILE.parent]:
@@ -84,14 +83,6 @@ def cfg_bool(key: str, default: bool):
 
 # ---------------- 7z setup ----------------
 def ensure_7z_ready() -> Path:
-    """
-    自动选择并解压合适的 7z 压缩包到 ./7z，返回 7zz 可执行文件路径。
-    优先级：
-      1) 环境变量 SEVENZ_TARBALL 指定（放在 ./bin 下）
-      2) macOS -> 7z2501-mac.tar.xz
-      3) Linux arm64 -> 7z2501-linux-arm64.tar.xz
-      4) Linux x64   -> 7z2501-linux-x64.tar.xz
-    """
     sevenz_path = SEVENZ_DIR / "7zz"
     if sevenz_path.exists():
         logger.info(f"7z 已就绪: {sevenz_path}")
@@ -103,8 +94,8 @@ def ensure_7z_ready() -> Path:
         if not tar_path.exists():
             raise RuntimeError(f"未找到 {tar_path}（请确认放在 ./bin/ 下）")
     else:
-        sys = platform.system().lower()     # 'darwin' / 'linux' / 'windows'
-        arch = platform.machine().lower()   # 'arm64' / 'aarch64' / 'x86_64' 等
+        sys = platform.system().lower()
+        arch = platform.machine().lower()
         if sys == "darwin":
             candidates = ["7z2501-mac.tar.xz", "7z-mac.tar.xz", "7z-macos.tar.xz"]
         elif sys == "linux":
@@ -128,7 +119,7 @@ def ensure_7z_ready() -> Path:
             tf.extractall(SEVENZ_DIR)
         else:
             for m in members:
-                m.name = Path(m.name).name  # 去掉前缀目录
+                m.name = Path(m.name).name
                 tf.extract(m, SEVENZ_DIR)
 
     try:
@@ -148,7 +139,6 @@ def ensure_7z_ready() -> Path:
 
     return sevenz_path
 
-# 全局 7zz 可执行路径：应用启动时初始化，仅解压一次
 SEVENZ_PATH: Optional[Path] = None
 
 # ---------------- Email helpers ----------------
@@ -163,7 +153,7 @@ _FULLWIDTH_MAP = str.maketrans({
     "】": "]",
     "：": ":",
     "、": ",",
-    "\u3000": " ",  # 全角空格
+    "\u3000": " ",
 })
 
 _EMAIL_RE = re.compile(
@@ -180,9 +170,6 @@ def _normalize_emails_text(s: str) -> str:
     return s
 
 def parse_recipients(s: str) -> List[str]:
-    """
-    解析并返回干净的邮件地址列表；若存在非法地址直接报错，避免 SMTP 501。
-    """
     s = _normalize_emails_text(s)
     if not s:
         return []
@@ -207,17 +194,68 @@ def parse_recipients(s: str) -> List[str]:
     return uniq
 
 def connect_smtp(host: str, port: int, username: str, password: str, use_ssl: bool, use_tls: bool):
-    if use_ssl:
-        server = smtplib.SMTP_SSL(host, port, timeout=30)
-    else:
-        server = smtplib.SMTP(host, port, timeout=30)
-    server.ehlo()
-    if use_tls and not use_ssl:
-        server.starttls()
+    timeout_sec = cfg_int("SMTP_TIMEOUT", 120)
+    debug = cfg_bool("SMTP_DEBUG", False)
+
+    logger.info(f"SMTP 连接准备：host={host}, port={port}, ssl={use_ssl}, tls={use_tls}, timeout={timeout_sec}s")
+
+    try:
+        ip_list = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        ip_str = ", ".join(sorted({ai[4][0] for ai in ip_list}))
+        logger.info(f"SMTP DNS 解析成功：{host} -> {ip_str}")
+    except Exception as e:
+        raise RuntimeError(f"SMTP DNS 解析失败：{host}:{port} -> {e}")
+
+    try:
+        t0 = time.time()
+        server = smtplib.SMTP_SSL(host, port, timeout=timeout_sec) if use_ssl else smtplib.SMTP(host, port, timeout=timeout_sec)
+        if debug:
+            server.set_debuglevel(1)
+        logger.info(f"SMTP 已建立 TCP 连接（{'SSL' if use_ssl else 'PLAIN'}），耗时 {time.time()-t0:.2f}s")
+    except Exception as e:
+        raise RuntimeError(f"SMTP 连接失败（SSL={use_ssl}）：{e}")
+
+    try:
+        t0 = time.time()
         server.ehlo()
+        logger.info(f"SMTP EHLO 完成，耗时 {time.time()-t0:.2f}s")
+    except Exception as e:
+        server.close()
+        raise RuntimeError(f"SMTP EHLO 失败：{e}")
+
+    if use_tls and not use_ssl:
+        try:
+            t0 = time.time()
+            server.starttls(timeout=timeout_sec)
+            server.ehlo()
+            logger.info(f"SMTP STARTTLS 握手完成，耗时 {time.time()-t0:.2f}s")
+        except Exception as e:
+            server.close()
+            raise RuntimeError(f"SMTP STARTTLS 失败：{e}")
+
     if username:
-        server.login(username, password)
+        try:
+            t0 = time.time()
+            server.login(username, password)
+            logger.info(f"SMTP 登录成功（user={username}），耗时 {time.time()-t0:.2f}s")
+        except Exception as e:
+            server.close()
+            raise RuntimeError(f"SMTP 登录失败：{e}")
+
+    try:
+        server.sock.settimeout(timeout_sec)
+    except Exception:
+        pass
+
     return server
+
+def pick_sender(username: str) -> str:
+    env_from = (cfg("SMTP_FROM", "") or "").strip()
+    if env_from:
+        return env_from
+    if username:
+        return username
+    return f"no-reply@{socket.gethostname()}"
 
 # ---------------- Task manager ----------------
 class JobStatus:
@@ -264,10 +302,16 @@ class StartPayload(BaseModel):
     output_basename: str = Field(default_factory=lambda: cfg("DEFAULT_OUTPUT_BASENAME", "mydata"))
     subject_prefix: str = Field(default_factory=lambda: cfg("DEFAULT_SUBJECT_PREFIX", "项目资料-分卷传输"))
     volume_size_mb: int = Field(default_factory=lambda: cfg_int("DEFAULT_VOLUME_SIZE_MB", 20))
-    send_interval_sec: int = Field(default_factory=lambda: cfg_int("DEFAULT_SEND_INTERVAL_SEC", 2))
-    sender: str = Field(default_factory=lambda: cfg("DEFAULT_SENDER", ""))
+    send_interval_sec: int = Field(default_factory=lambda: cfg_int("DEFAULT_SEND_INTERVAL_SEC", 5))
     recipients: str = Field(default_factory=lambda: cfg("DEFAULT_RECIPIENTS", ""))
     cc: str = Field(default_factory=lambda: cfg("DEFAULT_CC", ""))
+
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_ssl: Optional[bool] = None
+    smtp_use_tls: Optional[bool] = None
 
 class SMTPTestPayload(BaseModel):
     host: str
@@ -278,7 +322,7 @@ class SMTPTestPayload(BaseModel):
     use_tls: bool = True
 
 # ---------------- App ----------------
-app = FastAPI(title="Folder Split-Mailer", version="1.2.0")
+app = FastAPI(title="Folder Split-Mailer", version="1.2.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -288,7 +332,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 静态资源挂载（app/static） ---
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -310,8 +353,7 @@ def api_defaults():
         "output_basename": cfg("DEFAULT_OUTPUT_BASENAME", "mydata"),
         "subject_prefix": cfg("DEFAULT_SUBJECT_PREFIX", "项目资料-分卷传输"),
         "volume_size_mb": cfg_int("DEFAULT_VOLUME_SIZE_MB", 20),
-        "send_interval_sec": cfg_int("DEFAULT_SEND_INTERVAL_SEC", 2),
-        "sender": cfg("DEFAULT_SENDER", ""),
+        "send_interval_sec": cfg_int("DEFAULT_SEND_INTERVAL_SEC", 5),
         "recipients": cfg("DEFAULT_RECIPIENTS", ""),
         "cc": cfg("DEFAULT_CC", ""),
         "smtp_host": cfg("SMTP_HOST", ""),
@@ -328,9 +370,6 @@ async def api_upload(
     files: List[UploadFile] = File(...),
     paths: List[str] = Form(...),
 ):
-    """
-    将前端选择的整夹文件结构保存到 uploads/<session_id>/ 相同的相对路径下
-    """
     base = UPLOADS_DIR / session_id
     base.mkdir(parents=True, exist_ok=True)
 
@@ -339,7 +378,7 @@ async def api_upload(
 
     saved = []
     for i, uf in enumerate(files):
-        rel = Path(paths[i])  # e.g. myfolder/a.txt
+        rel = Path(paths[i])
         target_path = base / rel
         target_path.parent.mkdir(parents=True, exist_ok=True)
         with open(target_path, "wb") as out:
@@ -351,9 +390,6 @@ async def api_upload(
 
 @app.get("/api/list")
 def api_list(session_id: str):
-    """
-    列出 outputs/<session_id>/ 下生成的分卷
-    """
     out_dir = OUTPUTS_DIR / session_id
     if not out_dir.exists():
         return {"parts": [], "total": 0}
@@ -385,16 +421,35 @@ def api_test_smtp(payload: SMTPTestPayload):
 def _run_job(job: Job, payload: StartPayload):
     job.status = JobStatus.RUNNING
     try:
-        # 1) 输入目录：uploads/<session_id>
+        # ---------- 先解析 SMTP 并做预检（不通过则立即失败，避免白压缩） ----------
+        host = (payload.smtp_host or cfg("SMTP_HOST", "")).strip()
+        port = payload.smtp_port if payload.smtp_port is not None else cfg_int("SMTP_PORT", 465)
+        username = (payload.smtp_username or cfg("SMTP_USERNAME", "")).strip()
+        password = (payload.smtp_password or cfg("SMTP_PASSWORD", "")).strip()
+        use_ssl = payload.smtp_use_ssl if payload.smtp_use_ssl is not None else cfg_bool("SMTP_USE_SSL", True)
+        use_tls = payload.smtp_use_tls if payload.smtp_use_tls is not None else cfg_bool("SMTP_USE_TLS", False)
+
+        if not host:
+            raise RuntimeError("未配置 SMTP_HOST（请在前端或环境变量中提供）")
+
+        job.log("进行 SMTP 预检（联通性与登录）...")
+        try:
+            test_srv = connect_smtp(host, port, username, password, use_ssl, use_tls)
+            test_srv.noop()
+            test_srv.quit()
+            job.log("SMTP 预检通过")
+        except Exception as e:
+            raise RuntimeError(f"SMTP 预检失败：{e}")
+
+        # ---------- 目录检查 ----------
         session_dir = UPLOADS_DIR / payload.session_id
         if not session_dir.exists():
             raise RuntimeError("未找到上传目录，请先上传文件夹")
 
-        # 2) 输出目录：outputs/<session_id>
         out_dir = OUTPUTS_DIR / payload.session_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # 7z（使用启动时已准备好的全局路径，必要时兜底）
+        # ---------- 压缩 ----------
         global SEVENZ_PATH
         job.log("准备压缩工具...")
         sevenz = SEVENZ_PATH or ensure_7z_ready()
@@ -403,7 +458,6 @@ def _run_job(job: Job, payload: StartPayload):
         base = (payload.output_basename or "mydata").strip() or "mydata"
         archive_path = out_dir / f"{base}.7z"
 
-        # 清理旧分卷，避免 7z 试图“更新多卷包”
         old_parts = list(out_dir.glob(f"{base}.7z.*"))
         if archive_path.exists() or old_parts:
             job.log("清理上次生成的分卷")
@@ -436,18 +490,9 @@ def _run_job(job: Job, payload: StartPayload):
             raise RuntimeError("未生成任何分卷文件")
         job.log(f"压缩完成，共 {len(parts)} 份")
 
-        # SMTP
-        host = cfg("SMTP_HOST", "")
-        port = cfg_int("SMTP_PORT", 465)
-        username = cfg("SMTP_USERNAME", "")
-        password = cfg("SMTP_PASSWORD", "")
-        use_ssl = cfg_bool("SMTP_USE_SSL", True)
-        use_tls = cfg_bool("SMTP_USE_TLS", False)
-        if not host:
-            raise RuntimeError("未配置 SMTP_HOST")
-
+        # ---------- 发送 ----------
         job.log("开始发送邮件")
-        logger.info(f"SMTP: host={host} port={port} ssl={use_ssl} tls={use_tls}")
+        logger.info(f"SMTP(最终生效): host={host} port={port} ssl={use_ssl} tls={use_tls}")
         server = connect_smtp(host, port, username, password, use_ssl, use_tls)
 
         to_list = parse_recipients(payload.recipients)
@@ -457,15 +502,17 @@ def _run_job(job: Job, payload: StartPayload):
 
         subject_prefix = (payload.subject_prefix or "项目资料-分卷传输").strip() or "项目资料-分卷传输"
         total = len(parts)
-        sender = payload.sender or username or f"no-reply@{socket.gethostname()}"
+        from_addr = pick_sender(username)
         interval = max(0, int(payload.send_interval_sec))
 
+        logger.info(f"发件人: {from_addr}")
         logger.info(f"收件人: {to_list}, 抄送: {cc_list}")
+
         for idx, part in enumerate(parts, start=1):
             msg = EmailMessage()
             subj = f"{subject_prefix} - {base} (Part {idx}/{total})"
             msg["Subject"] = str(Header(subj, "utf-8"))
-            msg["From"] = sender
+            msg["From"] = from_addr
             msg["To"] = ", ".join(to_list)
             if cc_list:
                 msg["Cc"] = ", ".join(cc_list)
@@ -476,7 +523,7 @@ def _run_job(job: Job, payload: StartPayload):
             msg.add_attachment(data, maintype="application", subtype="octet-stream", filename=part.name)
 
             all_rcpts = to_list + cc_list
-            server.send_message(msg, from_addr=sender, to_addrs=all_rcpts)
+            server.send_message(msg, from_addr=from_addr, to_addrs=all_rcpts)
             job.log(f"已发送第 {idx}/{total} 封")
             logger.info(f"发送成功: {part.name} -> to={all_rcpts}")
             if idx < total and interval > 0:
@@ -502,7 +549,6 @@ def api_start(payload: StartPayload):
 def api_health():
     return {"ok": True}
 
-# ---------- 应用启动时就准备好 7zz（只解压一次） ----------
 @app.on_event("startup")
 def _prepare_sevenz_on_startup():
     global SEVENZ_PATH
@@ -511,10 +557,8 @@ def _prepare_sevenz_on_startup():
         SEVENZ_PATH = ensure_7z_ready()
         logger.info(f"7z 初始化完成：{SEVENZ_PATH}")
     except Exception as e:
-        # 保留启动，但后续 _run_job 会兜底尝试；同时把错误写日志便于排查
         logger.error(f"初始化 7z 失败：{e}")
 
-# 右键直接运行 main.py
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=12083, reload=True)

@@ -44,7 +44,6 @@
       .row{grid-template-columns:1fr}
     }
     .note{font-size:12px;color:var(--muted);margin-top:-6px}
-    /* 隐藏真实的文件夹选择框 */
     #dirPicker{ position:absolute; left:-9999px; width:0; height:0; opacity:0; }
   </style>
 </head>
@@ -60,7 +59,6 @@
     <div class="card">
       <div class="section-title">上传与参数</div>
 
-      <!-- 单按钮：点击后唤起文件夹选择，并自动上传 -->
       <div class="row">
         <div>上传源文件夹</div>
         <div class="stack">
@@ -84,7 +82,6 @@
       <div class="row">
         <div>发送间隔（秒）</div><input id="send_interval_sec" type="number" min="0" step="1" placeholder="2" />
       </div>
-      <div class="row"><div>发件人地址</div><input id="sender" type="email" placeholder="" /></div>
       <div class="row"><div>收件人（逗号分隔）</div><input id="recipients" type="text" placeholder="" /></div>
       <div class="row"><div>抄送（逗号分隔）</div><input id="cc" type="text" placeholder="" /></div>
 
@@ -139,6 +136,50 @@
   function setStatus(s){ el('status').innerText = s; }
   function setJobId(s){ el('jobId').innerText = s; }
 
+  // ===== 读取前端里的 SMTP 配置（两套键名） =====
+  function getSmtpForTest() {
+    return {
+      host: el('smtp_host').value.trim(),
+      port: parseInt(el('smtp_port').value || '0', 10),
+      username: el('smtp_username').value.trim(),
+      password: el('smtp_password').value,
+      use_ssl: el('smtp_use_ssl').checked,
+      use_tls: el('smtp_use_tls').checked,
+    };
+  }
+  function getSmtpForStart() {
+    return {
+      smtp_host: el('smtp_host').value.trim(),
+      smtp_port: parseInt(el('smtp_port').value || '0', 10),
+      smtp_username: el('smtp_username').value.trim(),
+      smtp_password: el('smtp_password').value,
+      smtp_use_ssl: el('smtp_use_ssl').checked,
+      smtp_use_tls: el('smtp_use_tls').checked,
+    };
+  }
+
+  // ===== SSL/TLS 互斥 + 端口联动 =====
+  function syncSmtpMode(changed) {
+    const ssl = el('smtp_use_ssl');
+    const tls = el('smtp_use_tls');
+    const portInput = el('smtp_port');
+
+    if (changed === 'ssl' && ssl.checked) tls.checked = false;
+    if (changed === 'tls' && tls.checked) ssl.checked = false;
+
+    const p = parseInt(portInput.value || '0', 10);
+    const shouldAuto = (isNaN(p) || p <= 0 || changed === 'ssl' || changed === 'tls' || changed === 'init');
+    if (shouldAuto) {
+      if (ssl.checked) {
+        portInput.value = 465;
+      } else if (tls.checked) {
+        portInput.value = 587;
+      } else {
+        portInput.value = 25;
+      }
+    }
+  }
+
   async function loadDefaults(){
     const res = await fetch('/api/defaults');
     const d = await res.json();
@@ -146,7 +187,6 @@
     el('subject_prefix').value = d.subject_prefix || '项目资料-分卷传输';
     el('volume_size_mb').value = d.volume_size_mb ?? 20;
     el('send_interval_sec').value = d.send_interval_sec ?? 2;
-    el('sender').value = d.sender || '';
     el('recipients').value = d.recipients || '';
     el('cc').value = d.cc || '';
     el('smtp_host').value = d.smtp_host || '';
@@ -158,10 +198,16 @@
 
     const isArm = /arm|aarch64|apple silicon|m1|m2/i.test(navigator.userAgent);
     el('arch').innerText = '客户端: ' + (isArm ? 'ARM/Apple' : 'x64/其他');
+
+    syncSmtpMode('init');
   }
 
   el('btnReadDefaults').onclick = loadDefaults;
   window.addEventListener('load', loadDefaults);
+
+  el('smtp_use_ssl').addEventListener('change', () => syncSmtpMode('ssl'));
+  el('smtp_use_tls').addEventListener('change', () => syncSmtpMode('tls'));
+  el('smtp_port').addEventListener('input', () => syncSmtpMode('port'));
 
   function normalizeEmails(s){
     if(!s) return "";
@@ -173,7 +219,7 @@
       .replace(/^[,]+|[,]+$/g, "");
   }
 
-  // 单按钮：点击 -> 唤起文件夹选择；选择完成 -> 自动上传
+  // 选择文件夹并自动上传
   const picker = el('dirPicker');
   el('btnPickAndUpload').onclick = () => picker.click();
 
@@ -199,38 +245,55 @@
     }catch(e){
       addLog('上传异常：' + e);
     }finally{
-      // 清空选择，便于再次选择同一文件夹时还能触发 change
       picker.value = '';
     }
   });
 
-  // 测试 SMTP
+  // 测试 SMTP（手动）
   el('btnTestSMTP').onclick = async () => {
-    const body = {
-      host: el('smtp_host').value.trim(),
-      port: parseInt(el('smtp_port').value || '0', 10),
-      username: el('smtp_username').value.trim(),
-      password: el('smtp_password').value,
-      use_ssl: el('smtp_use_ssl').checked,
-      use_tls: el('smtp_use_tls').checked,
-    };
-    const res = await fetch('/api/test-smtp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    const j = await res.json();
-    addLog(j.ok ? 'SMTP 正常' : 'SMTP 失败：' + j.message);
+    const body = getSmtpForTest();
+    try{
+      const res = await fetch('/api/test-smtp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const j = await res.json();
+      addLog(j.ok ? 'SMTP 正常' : 'SMTP 失败：' + j.message);
+    }catch(err){
+      addLog('SMTP 测试异常：' + err);
+    }
   };
 
-  // 启动任务
+  // 启动任务（先自动测试 SMTP，通过才继续）
   let pollTimer = null;
   el('btnStart').onclick = async () => {
+    // 1) 自动预检 SMTP
+    const testBody = getSmtpForTest();
+    addLog('开始 SMTP 预检...');
+    try{
+      const testRes = await fetch('/api/test-smtp', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(testBody)
+      });
+      const testJson = await testRes.json();
+      if(!testRes.ok || !testJson.ok){
+        addLog('SMTP 预检失败：' + (testJson.message || '未知错误'));
+        return; // ⛔️ 不继续发送
+      }
+      addLog('SMTP 预检通过');
+    }catch(err){
+      addLog('SMTP 预检异常：' + err);
+      return; // ⛔️ 不继续发送
+    }
+
+    // 2) 真正启动任务
     const payload = {
       session_id: sessionId,
       output_basename: el('output_basename').value.trim(),
       subject_prefix: el('subject_prefix').value.trim(),
       volume_size_mb: parseInt(el('volume_size_mb').value || '20', 10),
       send_interval_sec: parseInt(el('send_interval_sec').value || '2', 10),
-      sender: el('sender').value.trim(),
       recipients: normalizeEmails(el('recipients').value),
       cc: normalizeEmails(el('cc').value),
+      ...getSmtpForStart(),
     };
     const res = await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     if(!res.ok){
