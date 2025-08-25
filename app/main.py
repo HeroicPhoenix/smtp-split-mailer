@@ -517,4 +517,4 @@ def _prepare_sevenz_on_startup():
 # 右键直接运行 main.py
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=12082, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=12083, reload=True)

@@ -3,7 +3,7 @@ services:
   folder-mailer:
     container_name: smtp-split-mailer
     ports:
-      - "12082:12082"
+      - "12083:12083"
     volumes:
       # 群晖本地统一映射到容器 /data，里面会包含 uploads/outputs/logs/bin/7z
       - /volume1/docker/smtp-split-mailer/data:/data

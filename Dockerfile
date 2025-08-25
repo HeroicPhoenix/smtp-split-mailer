@@ -22,6 +22,6 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # 拷贝项目代码到 /app
 COPY . /app
 
-EXPOSE 12082
+EXPOSE 12083
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "12082", "--log-level", "warning", "--no-access-log"]
