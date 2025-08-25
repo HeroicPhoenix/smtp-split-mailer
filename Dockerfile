@@ -14,14 +14,19 @@ WORKDIR /app
 # 先拷贝 requirements.txt（利用缓存）
 COPY requirements.txt ./
 
+COPY requirements.txt /app/requirements.txt
+
 # 安装 Python 依赖（走阿里云镜像源）
 RUN pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
     && rm -rf /root/.cache/pip
 
 # 拷贝项目代码到 /app
-COPY . /app
+COPY app /app
+
+# 数据卷（让 /data 可挂载）
+VOLUME ["/data"]
 
 EXPOSE 12083
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "12082", "--log-level", "warning", "--no-access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "12083", "--log-level", "warning", "--no-access-log"]
