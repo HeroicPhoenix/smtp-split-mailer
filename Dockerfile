@@ -5,17 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive
 
 # 安装 7z 解包工具（tar + xz-utils）和证书
-# 替换 apt 源为阿里云（bookworm）
-RUN printf '%s\n' \
-    'deb http://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware' \
-    'deb http://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware' \
-    'deb http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware' \
-    > /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        xz-utils tar ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xz-utils tar ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
