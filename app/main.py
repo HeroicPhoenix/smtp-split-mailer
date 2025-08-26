@@ -22,17 +22,19 @@ from email.utils import getaddresses
 import smtplib
 
 # ---------------- Paths ----------------
-APP_DIR = Path(__file__).resolve().parent.parent  # 项目根
-APP_DIR_SELF = Path(__file__).resolve().parent    # app/ 目录
-STATIC_DIR = APP_DIR_SELF / "static"              # 前端目录 app/static
+APP_DIR = Path(__file__).resolve().parent.parent  # 项目根（/app）
+APP_DIR_SELF = Path(__file__).resolve().parent    # app/ 目录（/app/app）
 
+STATIC_DIR = APP_DIR_SELF / "static"
+
+# 数据目录（持久化）
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data" if Path("/data").exists() else APP_DIR / "data"))
 
 UPLOADS_DIR = DATA_DIR / "uploads"
 OUTPUTS_DIR = DATA_DIR / "outputs"
-SEVENZ_DIR  = DATA_DIR / "7z"
-BIN_DIR     = DATA_DIR / "bin"
-CONFIG_FILE = APP_DIR / "config" / "config.yaml"
+SEVENZ_DIR  = DATA_DIR / "7z"        # 解压后 7zz 存这里
+BIN_DIR     = APP_DIR_SELF / "bin"   # ✅ 7z 压缩包固定随代码
+CONFIG_FILE = APP_DIR_SELF / "config" / "config.yaml"   # ✅ 改成 app/config/config.yaml
 LOG_FILE    = DATA_DIR / "logs" / "app.log"
 
 for p in [UPLOADS_DIR, OUTPUTS_DIR, SEVENZ_DIR, BIN_DIR, LOG_FILE.parent]:

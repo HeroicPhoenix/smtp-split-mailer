@@ -21,8 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # 拷贝项目代码到 /app
 COPY app /app
-# 拷贝配置
-COPY config /app/config
 
 # 数据卷（让 /data 可挂载）
 VOLUME ["/data"]
