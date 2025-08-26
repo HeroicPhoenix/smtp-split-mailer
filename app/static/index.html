@@ -45,6 +45,14 @@
     }
     .note{font-size:12px;color:var(--muted);margin-top:-6px}
     #dirPicker{ position:absolute; left:-9999px; width:0; height:0; opacity:0; }
+
+    /* === 上传进度条样式 === */
+    .progress-wrap{display:flex; align-items:center; gap:10px; margin-top:8px}
+    progress{width:100%; height:12px; -webkit-appearance:none; appearance:none; }
+    progress::-webkit-progress-bar{ background:#eef2ff; border-radius:999px; }
+    progress::-webkit-progress-value{ background:var(--pri); border-radius:999px; }
+    progress::-moz-progress-bar{ background:var(--pri); }
+    .progress-text{font-size:12px; color:var(--muted); min-width:128px; text-align:right}
   </style>
 </head>
 <body>
@@ -67,6 +75,12 @@
         </div>
       </div>
       <div class="note">选择后会立即上传到服务器（uploads/session_xxx/）。</div>
+
+      <!-- 进度条 -->
+      <div class="progress-wrap" id="upWrap" style="display:none;">
+        <progress id="upProgress" value="0" max="100"></progress>
+        <div class="progress-text" id="upText">0%</div>
+      </div>
 
       <div class="hr"></div>
       <div class="section-title">输出与邮件字段</div>
@@ -219,34 +233,88 @@
       .replace(/^[,]+|[,]+$/g, "");
   }
 
-  // 选择文件夹并自动上传
+  // ===== 上传：选择文件夹并显示进度条 =====
   const picker = el('dirPicker');
+  const upWrap = el('upWrap');
+  const upProgress = el('upProgress');
+  const upText = el('upText');
+
   el('btnPickAndUpload').onclick = () => picker.click();
+
+  function formatBytes(n){
+    if(!Number.isFinite(n)) return '-';
+    const u = ['B','KB','MB','GB','TB'];
+    let i=0, v=n;
+    while(v>=1024 && i<u.length-1){ v/=1024; i++; }
+    return v.toFixed(v<10?2:1) + ' ' + u[i];
+  }
 
   picker.addEventListener('change', async () => {
     if(!picker.files || !picker.files.length){
       return;
     }
-    addLog('开始上传...');
+
+    // 1) 组装 FormData
     const fd = new FormData();
     fd.append('session_id', sessionId);
-    Array.from(picker.files).forEach(f => {
+    const files = Array.from(picker.files);
+    files.forEach(f => {
       fd.append('files', f);
       fd.append('paths', f.webkitRelativePath || f.name);
     });
-    try{
-      const res = await fetch('/api/upload', {method:'POST', body:fd});
-      if(!res.ok){
-        addLog('上传失败');
-        return;
+
+    // 2) 计算总大小（用于展示）
+    const totalBytes = files.reduce((s,f)=> s + (f.size||0), 0);
+
+    // 3) 初始化进度条
+    upWrap.style.display = 'flex';
+    upProgress.value = 0;
+    upText.textContent = '0%';
+    addLog(`开始上传（${files.length} 个文件，共 ${formatBytes(totalBytes)}）...`);
+
+    // 4) 用 XHR 发送以捕获上传进度（fetch 无法原生监听 upload.progress）
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round(e.loaded * 100 / e.total);
+        upProgress.value = percent;
+        upText.textContent = `${percent}%  ·  ${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
+      } else {
+        // 某些环境 e.total 不可用，退化为已传字节/总大小估算
+        const percent = Math.min(100, Math.round((e.loaded / (totalBytes || e.loaded)) * 100));
+        upProgress.value = percent;
+        upText.textContent = `${percent}%  ·  已上传 ${formatBytes(e.loaded)}`;
       }
-      await res.json();
-      addLog('上传完成');
-    }catch(e){
-      addLog('上传异常：' + e);
-    }finally{
+    };
+
+    xhr.onload = async () => {
+      // 成功/失败统一处理
+      try{
+        const text = xhr.responseText || '{}';
+        const j = JSON.parse(text);
+        if (xhr.status >= 200 && xhr.status < 300 && j.ok) {
+          addLog('上传完成');
+        } else {
+          addLog('上传失败：' + (j.error || j.message || `HTTP ${xhr.status}`));
+        }
+      }catch(_){
+        addLog('上传失败：响应解析错误');
+      }finally{
+        picker.value = '';
+        // 2 秒后自动收起进度条
+        setTimeout(()=>{ upWrap.style.display='none'; }, 2000);
+      }
+    };
+
+    xhr.onerror = () => {
+      addLog('上传异常：网络错误');
       picker.value = '';
-    }
+      setTimeout(()=>{ upWrap.style.display='none'; }, 2000);
+    };
+
+    xhr.send(fd);
   });
 
   // 测试 SMTP（手动）
