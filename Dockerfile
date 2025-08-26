@@ -11,9 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 先拷贝 requirements.txt（利用缓存）
-COPY requirements.txt ./
-
+# 先拷贝 requirements.txt
 COPY requirements.txt /app/requirements.txt
 
 # 安装 Python 依赖（走阿里云镜像源）
@@ -23,10 +21,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # 拷贝项目代码到 /app
 COPY app /app
+# 拷贝配置
+COPY config /app/config
 
 # 数据卷（让 /data 可挂载）
 VOLUME ["/data"]
 
 EXPOSE 12083
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "12083", "--log-level", "warning", "--no-access-log"]
+CMD ["uvicorn","main:app","--host","0.0.0.0","--port","12083", "--log-level", "warning", "--no-access-log"]
