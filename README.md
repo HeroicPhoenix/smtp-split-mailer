@@ -38,38 +38,9 @@ smtp-split-mailer/
 │ ├── outputs/ # 压缩结果目录（按 session_id）
 │ └── uploads/ # 上传文件目录（按 session_id）
 │
-├── docker-compose.yml # Docker Compose 配置
 ├── Dockerfile # Docker 镜像构建文件
 ├── requirements.txt # Python 依赖清单
 └── README.md # 使用文档
-```
-
----
-
-## ⚙️ 环境变量配置（docker-compose）
-在 `docker-compose.yml` 中通过 `environment` 配置：
-
-```yaml
-environment:
-  # --- SMTP 配置 ---
-  SMTP_HOST: "smtp.xxx.com"
-  SMTP_PORT: 465
-  SMTP_USERNAME: "yourname@xxx.com"
-  SMTP_PASSWORD: "授权码或密码"
-  SMTP_USE_SSL: "true"
-  SMTP_USE_TLS: "false"
-
-  # --- 默认值配置 ---
-  DEFAULT_SENDER: "yourname@xxx.com"
-  DEFAULT_RECIPIENTS: "a@xxx.com,b@xxx.com"
-  DEFAULT_CC: "boss@xxx.com"
-  DEFAULT_SUBJECT_PREFIX: "项目资料-分卷传输"
-  DEFAULT_OUTPUT_BASENAME: "mydata"
-  DEFAULT_VOLUME_SIZE_MB: 20
-  DEFAULT_SEND_INTERVAL_SEC: 5
-
-  # --- 可选：强制指定 7z 包（放到 /app/bin/） ---
-  # SEVENZ_TARBALL: "7z2501-linux-x64.tar.xz"
 ```
 
 ---
